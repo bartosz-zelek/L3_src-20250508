@@ -6,17 +6,22 @@ ENTITY simple_f_meter_with_driver IS
     PORT (
         clk_100M : IN STD_LOGIC;
         rst : IN STD_LOGIC;
-        f_in : IN STD_LOGIC;
+        -- f_in : IN STD_LOGIC;
+        sw1 : IN STD_LOGIC;
+        sw2 : IN STD_LOGIC;
+        sw3 : IN STD_LOGIC;
         sseg : OUT STD_LOGIC_VECTOR (7 DOWNTO 0); -- active Low
         an : OUT STD_LOGIC_VECTOR (7 DOWNTO 0) -- active Low
     );
 END ENTITY simple_f_meter_with_driver;
 
 ARCHITECTURE struct OF simple_f_meter_with_driver IS
-    COMPONENT clk_wiz_0
+    COMPONENT clk_wiz_1
         PORT (
             clk_in1: IN STD_LOGIC;
-            clk_out1: OUT STD_LOGIC
+            clk_out1: OUT STD_LOGIC;
+            clk_out2: OUT STD_LOGIC;
+            clk_out3: OUT STD_LOGIC
         );
     END COMPONENT;
 
@@ -41,7 +46,7 @@ ARCHITECTURE struct OF simple_f_meter_with_driver IS
             clk_10M : IN STD_LOGIC;
             rst : IN STD_LOGIC;
             f_in : IN STD_LOGIC;
-            q : OUT STD_LOGIC_VECTOR (9 DOWNTO 0);
+            q : OUT STD_LOGIC_VECTOR (39 DOWNTO 0);
             first_none_zero_idx : OUT NATURAL;
             dot_pos : OUT NATURAL;
             symbol : OUT NATURAL
@@ -77,7 +82,8 @@ END FUNCTION;
     SIGNAL first_none_zero_idx : NATURAL;
     SIGNAL dot_pos : NATURAL;
     SIGNAL symbol : NATURAL;
-    SIGNAL clk_10M : STD_LOGIC;
+    SIGNAL clk1, clk2, clk3 : STD_LOGIC;
+    SIGNAL clk_to_fin : STD_LOGIC;
 
     -- SIGNAL seg0, seg1, seg2, seg3, seg4, seg5, seg6 : STD_LOGIC_VECTOR(6 DOWNTO 0) := (OTHERS => '1');
     type seg_array_t is array(0 to 7) of std_logic_vector(6 downto 0);
@@ -87,10 +93,12 @@ END FUNCTION;
 
 BEGIN
 
-    clk_wiz_0_clk_wiz_inst : clk_wiz_0
+    clk_wiz_1_clk_wiz_inst : clk_wiz_1
     PORT MAP(
         clk_in1 => clk_100M,
-        clk_out1 => clk_10M
+        clk_out1 => clk1,
+        clk_out2 => clk2,
+        clk_out3 => clk3
     );
 
     -- Instantiate the simple_f_meter component
@@ -98,7 +106,7 @@ BEGIN
     PORT MAP(
         clk_10M => clk_100M,
         rst => rst,
-        f_in => clk_100M,
+        f_in => clk_to_fin,
         q => q,
         first_none_zero_idx => first_none_zero_idx,
         dot_pos => dot_pos,
@@ -120,6 +128,22 @@ BEGIN
         an => an_tmp
     );
 
+    -- Generate the clock signal for the frequency input
+    SELECT_CLK : PROCESS(clk_100M)
+    BEGIN
+        IF rising_edge(clk_100M) THEN
+            IF sw1 = '1' THEN
+                clk_to_fin <= clk1;
+            ELSIF sw2 = '1' THEN
+                clk_to_fin <= clk2;
+            ELSIF sw3 = '1' THEN
+                clk_to_fin <= clk3;
+            ELSE
+                clk_to_fin <= '0'; -- Default to low if no switch is pressed
+            END IF;
+        END IF;
+    END PROCESS SELECT_CLK;
+
     SEG_UPDATE : PROCESS (clk_100M)
     BEGIN
         IF rising_edge(clk_100M) THEN
@@ -134,7 +158,7 @@ BEGIN
                 CASE symbol IS
                     WHEN 1 => seg(6) <= bin_to_7seg("1101"); -- kHz
                     WHEN 2 => seg(6) <= bin_to_7seg("1100"); -- MHz
-                    WHEN OTHERS => seg(6) <= (OTHERS => '1');        -- blank
+                    WHEN OTHERS => seg(6) <= (OTHERS => '0');        -- blank
                 END CASE;
             END IF;
         END IF;
