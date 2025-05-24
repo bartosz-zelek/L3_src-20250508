@@ -4,7 +4,7 @@ USE IEEE.NUMERIC_STD.ALL;
 
 ENTITY simple_f_meter_with_driver IS
     PORT (
-        clk_10M : IN STD_LOGIC;
+        clk_100M : IN STD_LOGIC;
         rst : IN STD_LOGIC;
         f_in : IN STD_LOGIC;
         sseg : OUT STD_LOGIC_VECTOR (7 DOWNTO 0); -- active Low
@@ -41,7 +41,7 @@ ARCHITECTURE struct OF simple_f_meter_with_driver IS
             clk_10M : IN STD_LOGIC;
             rst : IN STD_LOGIC;
             f_in : IN STD_LOGIC;
-            q : OUT STD_LOGIC_VECTOR (39 DOWNTO 0);
+            q : OUT STD_LOGIC_VECTOR (9 DOWNTO 0);
             first_none_zero_idx : OUT NATURAL;
             dot_pos : OUT NATURAL;
             symbol : OUT NATURAL
@@ -68,7 +68,7 @@ BEGIN
         WHEN "1101" => seg_s := "1110101";
         WHEN "1110" => seg_s := "0011011";
         WHEN "1111" => seg_s := "1110110";
-        WHEN OTHERS => seg_s := "0000000"; -- blank for invalid codes
+        WHEN OTHERS => seg_s := "1111111"; -- blank for invalid codes (all segments off)
     END CASE;
     RETURN seg_s;
 END FUNCTION;
@@ -77,9 +77,11 @@ END FUNCTION;
     SIGNAL first_none_zero_idx : NATURAL;
     SIGNAL dot_pos : NATURAL;
     SIGNAL symbol : NATURAL;
-    SIGNAL clk_changed : STD_LOGIC;
+    SIGNAL clk_10M : STD_LOGIC;
 
-    SIGNAL seg0, seg1, seg2, seg3, seg4, seg5, seg6 : STD_LOGIC_VECTOR(6 DOWNTO 0) := (OTHERS => '1');
+    -- SIGNAL seg0, seg1, seg2, seg3, seg4, seg5, seg6 : STD_LOGIC_VECTOR(6 DOWNTO 0) := (OTHERS => '1');
+    type seg_array_t is array(0 to 7) of std_logic_vector(6 downto 0);
+    SIGNAL seg : seg_array_t := (OTHERS => (OTHERS => '1'));
     SIGNAL sseg_without_dot : STD_LOGIC_VECTOR(6 DOWNTO 0);
     SIGNAL an_tmp : STD_LOGIC_VECTOR(7 DOWNTO 0) := (OTHERS => '1');
 
@@ -87,16 +89,16 @@ BEGIN
 
     clk_wiz_0_clk_wiz_inst : clk_wiz_0
     PORT MAP(
-        clk_in1 => clk_10M,
-        clk_out1 => clk_changed
+        clk_in1 => clk_100M,
+        clk_out1 => clk_10M
     );
 
     -- Instantiate the simple_f_meter component
     simple_f_meter_inst : simple_f_meter
     PORT MAP(
-        clk_10M => clk_changed,
+        clk_10M => clk_100M,
         rst => rst,
-        f_in => f_in,
+        f_in => clk_100M,
         q => q,
         first_none_zero_idx => first_none_zero_idx,
         dot_pos => dot_pos,
@@ -105,48 +107,52 @@ BEGIN
 
     driver : led8_7seg_drv
     PORT MAP(
-        a => seg0,
-        b => seg1,
-        c => seg2,
-        d => seg3,
-        e => seg4,
-        f => seg5,
-        g => seg6,
-        h => (OTHERS => '1'), -- Placeholder for unused segment
-        clk_in => clk_10M,
+        a => seg(0),
+        b => seg(1),
+        c => seg(2),
+        d => seg(3),
+        e => seg(4),
+        f => seg(5),
+        g => seg(6),
+        h => (OTHERS => '0'), -- Placeholder for unused segment
+        clk_in => clk_100M,
         sseg => sseg_without_dot,
         an => an_tmp
     );
 
-    SEG_UPDATE : PROCESS (clk_changed)
+    SEG_UPDATE : PROCESS (clk_100M)
     BEGIN
-        IF rising_edge(clk_changed) THEN
+        IF rising_edge(clk_100M) THEN
             IF first_none_zero_idx /= 0 THEN
-                seg0 <= bin_to_7seg(q((first_none_zero_idx*4+3)-4*3 DOWNTO (first_none_zero_idx*4)-4*3));
-                seg1 <= bin_to_7seg(q((first_none_zero_idx*4+3)-4*2 DOWNTO (first_none_zero_idx*4)-4*2));
-                seg2 <= bin_to_7seg(q((first_none_zero_idx*4+3)-4*1 DOWNTO (first_none_zero_idx*4)-4*1));
-                seg3 <= bin_to_7seg(q((first_none_zero_idx*4+3)-4*0 DOWNTO (first_none_zero_idx*4)-4*0));
-                seg4 <= bin_to_7seg("1110"); -- Z
-                seg5 <= bin_to_7seg("1111"); -- H
+                for i in 0 to 3 loop
+                    seg(3-i) <= bin_to_7seg(
+                      q((first_none_zero_idx*4+3) - 4*i downto (first_none_zero_idx*4) - 4*i)
+                    );
+                end loop;
+                seg(4) <= bin_to_7seg("1110"); -- Z
+                seg(5) <= bin_to_7seg("1111"); -- H
                 CASE symbol IS
-                    WHEN 1 => seg6 <= bin_to_7seg("1101"); -- kHz
-                    WHEN 2 => seg6 <= bin_to_7seg("1100"); -- MHz
-                    WHEN OTHERS => seg6 <= (OTHERS => '1');        -- blank
+                    WHEN 1 => seg(6) <= bin_to_7seg("1101"); -- kHz
+                    WHEN 2 => seg(6) <= bin_to_7seg("1100"); -- MHz
+                    WHEN OTHERS => seg(6) <= (OTHERS => '1');        -- blank
                 END CASE;
             END IF;
         END IF;
     END PROCESS SEG_UPDATE;
 
-    INSERT_DOT : PROCESS (clk_changed)
+    dot_insert_proc : PROCESS(clk_100M, rst)
     BEGIN
-        IF rising_edge(clk_changed) THEN
-            IF an_tmp(dot_pos) = '0' THEN
-                sseg <= '0' & sseg_without_dot(6 DOWNTO 0); -- Set the dot position to 0
+        IF rst = '1' THEN
+            sseg <= (OTHERS => '1');
+        ELSIF rising_edge(clk_100M) THEN
+            -- Insert dot when the corresponding anode is active (low)
+            IF dot_pos < 8 AND an_tmp(dot_pos) = '0' THEN
+                sseg <= '0' & sseg_without_dot; -- Dot active (bit 7 = 0)
             ELSE
-                sseg <= '1' & sseg_without_dot(6 DOWNTO 0); -- Clear the dot position
+                sseg <= '1' & sseg_without_dot; -- Dot inactive (bit 7 = 1)
             END IF;
         END IF;
-    END PROCESS INSERT_DOT;
+    END PROCESS dot_insert_proc;
 
     an <= an_tmp;
 

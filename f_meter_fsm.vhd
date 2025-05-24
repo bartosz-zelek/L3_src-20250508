@@ -20,7 +20,7 @@ ARCHITECTURE behav OF f_meter_fsm IS
     SIGNAL c_state, n_state : state_type;
 BEGIN
 
-    proc_fsm : PROCESS (c_state, time_base_pulse) BEGIN
+    proc_fsm : PROCESS (c_state, time_base_pulse, count_end_pulse) BEGIN
         time_base_rst <= '0';
         time_base_on <= '0';
         memory_en <= '0';
