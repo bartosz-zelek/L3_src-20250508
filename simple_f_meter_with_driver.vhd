@@ -136,8 +136,8 @@ BEGIN
                 clk_to_fin <= clk1;
             ELSIF sw2 = '1' THEN
                 clk_to_fin <= clk2;
-            ELSIF sw3 = '1' THEN
-                clk_to_fin <= clk3;
+            -- ELSIF sw3 = '1' THEN
+            --     clk_to_fin <= clk3;
             ELSE
                 clk_to_fin <= '0'; -- Default to low if no switch is pressed
             END IF;
